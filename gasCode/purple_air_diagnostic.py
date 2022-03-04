@@ -25,9 +25,10 @@ from adafruit_pm25.i2c import PM25_I2C
 LIBRARY FOR REMOTE PA DATA CAPTURE AND EXPORT
 '''
 
-def mux_init():
+def mux_init(i2c, list_of_devices):
     '''
-    Initialize the mux board constructor 
+    Initialize the mux board constructor.
+    This is kind of Frankensteined together right now.
 
     output param: mux, used to enable and disable channels on the  mux board. 
     output type: object
@@ -36,12 +37,16 @@ def mux_init():
     output type: object
     '''
     
-    i2c = busio.I2C(board.SCL, board.SDA)
+    #i2c = busio.I2C(board.SCL, board.SDA)
 
-    mux = QwiicTCA9548A() # this is used for enabling/disabling mux channels
-    tca = adafruit_tca9548a.TCA9548A(i2c) # this is for contacting I2C devices on mux
+    if '0x70' in list_of_devices:
+        mux = QwiicTCA9548A() # this is used for enabling/disabling mux channels
+        tca = adafruit_tca9548a.TCA9548A(i2c) # this is for contacting I2C devices on mux
+    else:
+        mux = None
+        tca = None
 
-    return mux, tca, i2c
+    return mux, tca
 
 
 def channel_status(board_name):
@@ -140,7 +145,7 @@ def make_device_dict(list_of_devices):
     return dict_of_devices
 
 
-def capture_data(device_dict, tca, wait_time, n_points):
+def capture_data(device_dict, tca, wait_time, n_points, i2c):
     '''
     Capture data over the desired averaging time. Ex.) For the default wait time of 2 seconds and 300 points, this will be an average over 10 minutes.
     
@@ -162,25 +167,35 @@ def capture_data(device_dict, tca, wait_time, n_points):
 
     device_list = list(device_dict.keys())
 
-    #initialize objects needed to call individual data points on each sensor
-    if 'PM' in device_list:
-        pm = PM25_I2C(tca[5])
-    if 'MCP' in device_list:
-        mcp = adafruit_mcp9808.MCP9808(tca[6])
-    if 'Purpleair' in device_list:
-        purple_air = adafruit_ina219.INA219(tca[0])
-    if 'WIFI' in device_list:
-        wifi = adafruit_ina219.INA219(tca[7])
-    if 'RPI' in device_list:
-        rpi = adafruit_ina219.INA219(tca[4])
-    if 'Comms' in device_list:
-        comms = adafruit_ina219.INA219(tca[3])
-    if 'Fans' in device_list:
-        fans = adafruit_ina219.INA219(tca[2])
-    if 'SCD' in device_list:
-        scd = adafruit_scd30.SCD30(tca[5])
-    if 'BME' in device_list:
-        bme = adafruit_bme680.Adafruit_BME680_I2C(tca[5])
+    if tca == None:
+        if 'PM' in device_list:
+            pm = PM25_I2C(i2c)
+        if 'MCP' in device_list:
+            mcp = adafruit_mcp9808.MCP9808(i2c)
+        if 'SCD' in device_list:
+            scd = adafruit_scd30.SCD30(i2c)
+        if 'BME'in device_list:
+            bme = adafruit_bme680.Adafruit_BME680_I2C(i2c)
+    else:
+        #initialize objects needed to call individual data points on each sensor
+        if 'PM' in device_list:
+            pm = PM25_I2C(tca[5])
+        if 'MCP' in device_list:
+            mcp = adafruit_mcp9808.MCP9808(tca[6])
+        if 'Purpleair' in device_list:
+            purple_air = adafruit_ina219.INA219(tca[0])
+        if 'WIFI' in device_list:
+            wifi = adafruit_ina219.INA219(tca[7])
+        if 'RPI' in device_list:
+            rpi = adafruit_ina219.INA219(tca[4])
+        if 'Comms' in device_list:
+            comms = adafruit_ina219.INA219(tca[3])
+        if 'Fans' in device_list:
+            fans = adafruit_ina219.INA219(tca[2])
+        if 'SCD' in device_list:
+            scd = adafruit_scd30.SCD30(tca[5])
+        if 'BME' in device_list:
+            bme = adafruit_bme680.Adafruit_BME680_I2C(tca[5])
 
     #print("Wait Time = ", wait_time, " s")
     #print("Number of Points To Average Over = ", n_points, " Points")
