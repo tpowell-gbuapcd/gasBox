@@ -21,6 +21,8 @@ from datetime import timedelta
 from qwiic import QwiicTCA9548A
 from adafruit_pm25.i2c import PM25_I2C
 
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
 '''
 LIBRARY FOR REMOTE PA DATA CAPTURE AND EXPORT
 '''
@@ -124,12 +126,18 @@ def make_device_dict(list_of_devices):
 
     if '0x40' in list_of_devices:
         print('INA219 connected')
+        dict_of_devices['RPI'] = {'Current': [], 'Power': [], 'Voltage': []}
+
+    '''
+    if '0x40' in list_of_devices:
+        print('INA219 connected')
         dict_of_devices['Purpleair'] = {'Current': [], 'Power': [], 'Voltage': []}
         dict_of_devices['WIFI'] = {'Current': [], 'Power': [], 'Voltage': []}
         dict_of_devices['RPI'] = {'Current': [], 'Power': [], 'Voltage': []}
         dict_of_devices['Comms'] = {'Current': [], 'Power': [], 'Voltage': []}
         dict_of_devices['Fans'] = {'Current': [], 'Power': [], 'Voltage': []}
-    
+    '''
+
     if '0x61' in list_of_devices:
         print('SCD-30 connected')
         dict_of_devices['SCD'] = {'CO2': [], 'RH': [], 'Temp': []}
@@ -176,6 +184,8 @@ def capture_data(device_dict, tca, wait_time, n_points, i2c):
             scd = adafruit_scd30.SCD30(i2c)
         if 'BME'in device_list:
             bme = adafruit_bme680.Adafruit_BME680_I2C(i2c)
+        if 'RPI' in device_list:
+            rpi = adafruit_ina219.INA219(i2c)
     else:
         #initialize objects needed to call individual data points on each sensor
         if 'PM' in device_list:
@@ -203,7 +213,9 @@ def capture_data(device_dict, tca, wait_time, n_points, i2c):
     #print("Testing File Writer")
     #print("Data Capture Start Time: {}".format(datetime.now().strftime("%m/%d/%Y %H:%M:%S")))
     #print()
-        
+
+    PM_error = False
+
     i = 1
     start_time = datetime.now().strftime('%m:%d:%Y %H:%M:%S')
     device_dict['Time'] = start_time
@@ -220,8 +232,9 @@ def capture_data(device_dict, tca, wait_time, n_points, i2c):
                 device_dict['PM']['PM1.0 ST'].append(pmdata["pm10 standard"])
                 device_dict['PM']['PM2.5 ST'].append(pmdata["pm25 standard"])
                 device_dict['PM']['PM10.0 ST'].append(pmdata["pm100 standard"])
-            except:
-                Exception        
+            except Exception as e:
+                print("ERROR READING PM SENSOR: {}".format(e))
+                PM_error = True
         
         if 'SCD' in device_list:
             try:
@@ -229,8 +242,8 @@ def capture_data(device_dict, tca, wait_time, n_points, i2c):
                     device_dict['SCD']['CO2'].append(scd.CO2)
                     device_dict['SCD']['RH'].append(scd.relative_humidity)
                     device_dict['SCD']['Temp'].append(scd.temperature)
-            except:
-                Exception
+            except Exception as e:
+                print("ERROR READING CO2 SENSOR: {}".format(e))
 
         if 'Purpleair' in device_list:
             device_dict['Purpleair']['Current'].append(purple_air.current)
@@ -282,6 +295,13 @@ def capture_data(device_dict, tca, wait_time, n_points, i2c):
     end_time = datetime.now().strftime('%m/%d/%Y %H:%M:%S')
     print('Start: {}\nEnd: {}\nWait Average: {}\ni: {}'.format(start_time, end_time, wait_avg/i, i))
 
+    #encountering runtime errors when getting PM data. Seeing whether or not they affect the size of the dictionary
+    if PM_error == True:
+        print("PM ERROR RUNTIME ERROR ENCOUNTERED")
+        print("PM2.5 Size: {}".format(len(device_dict['PM']['PM2.5 ENV'])))
+        print("CO2 Size: {}".format(len(device_dict['SCD']['CO2'])))
+        print("RPI Size: {}".format(len(device_dict['RPI']['Current'])))
+
     return device_dict
 
 
@@ -301,14 +321,18 @@ def get_averages(data_dict):
     avg_dict = {}
 
     for device in data_dict.keys():
-        if device is 'Time':
+        if device == 'Time':
             # the start time of the data acquisition is not averaged since there's only one point and it's a datetime string.
             avg_dict[device] = data_dict[device]
         else:
             #everything else is averaged
             avg_dict[device] = {}
-            for param in data_dict[device].keys():
-                avg_dict[device][param] =  sum(data_dict[device][param])/len(data_dict[device][param])
+            try:
+                for param in data_dict[device].keys():
+                    avg_dict[device][param] =  sum(data_dict[device][param])/len(data_dict[device][param])
+            except Exception as e:
+                print("ERROR: {}".format(e))
+                print("ERROR OCCURRED PROCESSING {} {}".format(device, param))
         
 
     return avg_dict
@@ -323,7 +347,7 @@ def print_avg_data(avg_data_dict):
     '''
 
     for device in avg_data_dict.keys():
-        if device is 'Time':
+        if device == 'Time':
             print('Start Time: {}'.format(avg_data_dict[device]))
         else:
             for param in avg_data_dict[device].keys():
@@ -347,7 +371,7 @@ def make_header(avg_data_dict):
     header = ['Time']
 
     for device in avg_data_dict.keys():
-        if device is 'Time':
+        if device == 'Time':
             next
         else:
             for param in avg_data_dict[device].keys():
@@ -365,6 +389,10 @@ def csv_write(avg_data_dict):
     '''
 
     data_dir = os.getcwd() + "/data/"
+    print(data_dir)
+    my_path = os.path.join('gasCode', 'data', str(platform.node()) + datetime.now().strftime("%m%d%Y" + ".csv"))
+    print(my_path)
+
     file_name = data_dir + str(platform.node()) + datetime.now().strftime("%m%d%Y") + ".csv"
     csv_header = make_header(avg_data_dict)
    
@@ -383,7 +411,7 @@ def csv_write(avg_data_dict):
             row = [avg_data_dict['Time']]
             for device in avg_data_dict.keys():
                 #skip 'Time' in loop
-                if device is 'Time':
+                if device == 'Time':
                     next
                 else:
                     for param in avg_data_dict[device].keys():
@@ -396,7 +424,7 @@ def csv_write(avg_data_dict):
             
             for device in avg_data_dict.keys():
                 #skip 'Time' in loop
-                if device is 'Time':
+                if device == 'Time':
                     next
                 else:
                     for param in avg_data_dict[device].keys():
