@@ -10,6 +10,7 @@ import adafruit_ssd1306
 import adafruit_mcp9808
 import adafruit_bme680
 import adafruit_scd30
+import adafruit_bh1750
 import argparse
 import csv
 import os
@@ -88,8 +89,9 @@ def device_list(device):
 
     0x12 = PM sensor
     0x18 = MCP9808
-    0x40 = INA219, there is only one address here for all 5 INA219s. I could solder the address pads to change the addresses (0x40-0x44),
-    but I think this is unnecessary. If one is there, then they will all be there and they will be connected to predesignated MUX ports.
+    0x40 = INA219, in this code this is the load current
+    0x41 = INA219, in this code this is the solar panel current to the charge controller
+    0x44 = INA219, in this code this is the current from the charge controller to the batter.
     0x61 = SCD-30
     0x70 = MUX breakout
     0x77 = BME688
@@ -124,19 +126,21 @@ def make_device_dict(list_of_devices):
         print('MCP9808 connected')
         dict_of_devices['MCP'] = {'Temp': []}
 
+    if '0x23' in list_of_devices:
+        print('BH1750 connected')
+        dict_of_devices['Light'] = {'Lux': []}
+
     if '0x40' in list_of_devices:
-        print('INA219 connected')
+        print('INA219 connected, Load')
         dict_of_devices['RPI'] = {'Current': [], 'Power': [], 'Voltage': []}
 
-    '''
-    if '0x40' in list_of_devices:
-        print('INA219 connected')
-        dict_of_devices['Purpleair'] = {'Current': [], 'Power': [], 'Voltage': []}
-        dict_of_devices['WIFI'] = {'Current': [], 'Power': [], 'Voltage': []}
-        dict_of_devices['RPI'] = {'Current': [], 'Power': [], 'Voltage': []}
-        dict_of_devices['Comms'] = {'Current': [], 'Power': [], 'Voltage': []}
-        dict_of_devices['Fans'] = {'Current': [], 'Power': [], 'Voltage': []}
-    '''
+    if '0x41' in list_of_devices:
+        print('INA219 connected, Solar Panel')
+        dict_of_devices['Solar'] = {'Current': [], 'Power': [], 'Voltage': []}
+
+    if '0x44' in list_of_devices:
+        print('INA219 connected, Battery')
+        dict_of_devices['Batt'] = {'Current': [], 'Power': [], 'Voltage': []}
 
     if '0x61' in list_of_devices:
         print('SCD-30 connected')
@@ -185,9 +189,16 @@ def capture_data(device_dict, tca, wait_time, n_points, i2c):
         if 'BME'in device_list:
             bme = adafruit_bme680.Adafruit_BME680_I2C(i2c)
         if 'RPI' in device_list:
-            rpi = adafruit_ina219.INA219(i2c)
+            rpi = adafruit_ina219.INA219(i2c, addr=0x40)
+        if 'Solar' in device_list:
+            solar = adafruit_ina219.INA219(i2c, addr=0x41)
+        if 'Batt' in device_list:
+            batt = adafruit_ina219.INA219(i2c, addr=0x44)
+        if 'Light' in device_list:
+            light = adafruit_bh1750.BH1750(i2c)
     else:
         #initialize objects needed to call individual data points on each sensor
+        #currently have no solar test setup for units with MUX boards.
         if 'PM' in device_list:
             pm = PM25_I2C(tca[5])
         if 'MCP' in device_list:
@@ -245,6 +256,9 @@ def capture_data(device_dict, tca, wait_time, n_points, i2c):
             except Exception as e:
                 print("ERROR READING CO2 SENSOR: {}".format(e))
 
+        if 'Light' in device_list:
+            device_dict['Light']['Lux'].append(light.lux)
+
         if 'Purpleair' in device_list:
             device_dict['Purpleair']['Current'].append(purple_air.current)
             device_dict['Purpleair']['Power'].append(purple_air.power)
@@ -259,6 +273,16 @@ def capture_data(device_dict, tca, wait_time, n_points, i2c):
             device_dict['RPI']['Current'].append(rpi.current)
             device_dict['RPI']['Power'].append(rpi.power)
             device_dict['RPI']['Voltage'].append(rpi.bus_voltage)
+
+        if 'Solar' in device_list:
+            device_dict['Solar']['Current'].append(solar.current)
+            device_dict['Solar']['Power'].append(solar.power)
+            device_dict['Solar']['Voltage'].append(solar.bus_voltage)
+
+        if 'Batt' in device_list:
+            device_dict['Batt']['Current'].append(batt.current)
+            device_dict['Batt']['Power'].append(batt.power)
+            device_dict['Batt']['Voltage'].append(batt.bus_voltage)
 
         if 'Comms' in device_list:
             device_dict['Comms']['Current'].append(comms.current)
